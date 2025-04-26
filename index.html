@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fuel Report Scanner</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.1/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.4/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f5f7fa;
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+    form {
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    input[readonly] {
+      background-color: #eee;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      margin-top: 20px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .scan-btn {
+      background-color: #2196F3;
+      color: white;
+      margin-top: 15px;
+    }
+    .scan-btn:hover {
+      background-color: #0b7dda;
+    }
+    .download-btn {
+      background-color: #2196F3;
+      margin-top: 10px;
+    }
+    .download-btn:hover {
+      background-color: #0b7dda;
+    }
+    .buttons-container {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+    @media (max-width: 600px) {
+      .buttons-container {
+        flex-direction: column;
+        gap: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<h1>Fuel Report Scanner</h1>
+
+<form id="fuelForm">
+  <label>Date:</label>
+  <input type="date" id="date" required readonly>
+
+  <label>Fuel Type:</label>
+  <select id="fuelType" required>
+    <option value="Petrol">Petrol</option>
+    <option value="Diesel">Diesel</option>
+  </select>
+
+  <label>Start Reading:</label>
+  <input type="number" id="startReading" required readonly>
+
+  <label>End Reading:</label>
+  <input type="number" id="endReading" required readonly>
+
+  <div class="buttons-container">
+    <button type="button" class="scan-btn" onclick="scanReading()">Scan Reading</button>
+  </div>
+
+  <label>Litres Sold (Auto):</label>
+  <input type="number" id="litresSold" readonly>
+
+  <label>Cash (₹):</label>
+  <input type="number" id="cash" required>
+
+  <label>GPay (₹):</label>
+  <input type="number" id="gpay" required>
+
+  <label>Debtor (₹):</label>
+  <input type="number" id="debtor" required>
+
+  <button type="submit">Save Entry</button>
+</form>
+
+<button class="download-btn" onclick="downloadCSV()">Download Excel File</button>
+
+<script>
+  let entries = [];
+  let currentReadingType = 'start'; // Start reading by default
+
+  // Set today's date automatically
+  window.onload = function() {
+    const today = new Date().toISOString().substr(0, 10);
+    document.getElementById('date').value = today;
+  };
+
+  // Auto-calculate litres sold when endReading changes
+  document.getElementById('endReading').addEventListener('input', function() {
+    const start = parseFloat(document.getElementById('startReading').value) || 0;
+    const end = parseFloat(document.getElementById('endReading').value) || 0;
+    document.getElementById('litresSold').value = (end - start).toFixed(2);
+  });
+
+  function scanReading() {
+    // Toggle between start and end reading
+    const inputId = currentReadingType === 'start' ? 'startReading' : 'endReading';
+    currentReadingType = currentReadingType === 'start' ? 'end' : 'start';
+
+    // Open camera directly for live scan (using camera input)
+    const video = document.createElement('video');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(function(stream) {
+        video.srcObject = stream;
+        video.play();
+        document.body.appendChild(video);
+
+        // Detect image from camera feed
+        setInterval(function() {
+          if (video.paused || video.ended) return;
+
+          // Capture frame from video stream
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          Tesseract.recognize(
+            canvas,
+            'eng',
+            { logger: m => console.log(m) }
+          ).then(({ data: { text } }) => {
+            const number = parseFloat(text.replace(/[^\d.-]/g, '').trim());
+            if (number) {
+              document.getElementById(inputId).value = number;
+              video.pause();
+              video.srcObject.getTracks().forEach(track => track.stop());
+            }
+          });
+        }, 500);
+      }).catch(function(err) {
+        console.log("Error: " + err);
+      });
+  }
+
+  document.getElementById('fuelForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const date = document.getElementById('date').value;
+    const fuelType = document.getElementById('fuelType').value;
+    const start = parseFloat(document.getElementById('startReading').value);
+    const end = parseFloat(document.getElementById('endReading').value);
+    const litresSold = parseFloat(document.getElementById('litresSold').value);
+    const cash = parseFloat(document.getElementById('cash').value);
+    const gpay = parseFloat(document.getElementById('gpay').value);
+    const debtor = parseFloat(document.getElementById('debtor').value);
+    
+    entries.push({ date, fuelType, start, end, litresSold, cash, gpay, debtor });
+
+    alert('Entry saved!');
+
+    // Reset form fields
+    document.getElementById('startReading').value = '';
+    document.getElementById('endReading').value = '';
+    document.getElementById('litresSold').value = '';
+    document.getElementById('cash').value = '';
+    document.getElementById('gpay').value = '';
+    document.getElementById('debtor').value = '';
+  });
+
+  function downloadCSV() {
+    let csvContent = "data:text/csv;charset=utf-8,Date,Fuel Type,Start Reading,End Reading,Litres Sold,Cash,GPay,Debtor\n";
+    
+    entries.forEach(function(entry) {
+      const row = `${entry.date},${entry.fuelType},${entry.start},${entry.end},${entry.litresSold},${entry.cash},${entry.gpay},${entry.debtor}`;
+      csvContent += row + "\n";
+    });
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "fuel_report.csv");
+    document.body.appendChild(link);
+
+    link.click();
+    document.body.removeChild(link);
+  }
+</script>
+
+</body>
+</html>
