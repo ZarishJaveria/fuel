@@ -124,7 +124,6 @@
 </form>
 
 <script>
-  let scanningFor = 'opening'; // first reading is opening
   let entries = [];
 
   window.onload = function() {
@@ -152,19 +151,34 @@
             'eng',
             { logger: m => console.log(m) }
           ).then(({ data: { text } }) => {
-            const number = parseFloat(text.replace(/[^\d.-]/g, '').trim());
-            if (!isNaN(number)) {
-              if (scanningFor === 'opening') {
-                document.getElementById('opening').value = number;
-                scanningFor = 'closing';
-                alert("Opening Reading Captured. Now Scan Closing Reading!");
-              } else {
-                document.getElementById('closing').value = number;
+            console.log('Raw OCR Text:', text);
+
+            // Split lines from OCR
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            console.log('Lines:', lines);
+
+            if (lines.length >= 2) {
+              // Clean the first and second lines
+              const firstLine = lines[0].replace(/[^0-9.]/g, '');
+              const secondLine = lines[1].replace(/[^0-9.]/g, '');
+              
+              console.log('Opening:', firstLine, 'Closing:', secondLine);
+
+              const opening = parseFloat(firstLine);
+              const closing = parseFloat(secondLine);
+
+              if (!isNaN(opening) && !isNaN(closing)) {
+                document.getElementById('opening').value = opening;
+                document.getElementById('closing').value = closing;
+                calculateSold();
                 video.srcObject.getTracks().forEach(track => track.stop());
                 video.style.display = 'none';
-                scanningFor = 'opening';
-                calculateSold();
+                alert('Both readings captured successfully!');
+              } else {
+                alert('Could not detect proper numbers. Try again.');
               }
+            } else {
+              alert('Could not detect both lines properly. Try again.');
             }
           });
         }, { once: true });
