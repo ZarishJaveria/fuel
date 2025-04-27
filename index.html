@@ -3,36 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fuel Report Scanner</title>
+  <title>Fuel Station Report</title>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.1/dist/tesseract.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.4/xlsx.full.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
       margin: 20px;
-      background: #f5f7fa;
-    }
-    h1 {
-      text-align: center;
-      color: #333;
-      font-size: 24px;
-      margin-bottom: 20px;
+      background: #f0f2f5;
     }
     form {
       background: #fff;
       padding: 20px;
       border-radius: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      max-width: 600px;
+      margin: auto;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
     }
     label {
-      display: block;
-      margin-top: 15px;
       font-weight: bold;
+      margin-top: 10px;
+      display: block;
     }
     input, select, button {
       width: 100%;
       padding: 12px;
       margin-top: 5px;
+      margin-bottom: 10px;
       border: 1px solid #ccc;
       border-radius: 8px;
       font-size: 16px;
@@ -40,11 +40,17 @@
     input[readonly] {
       background-color: #eee;
     }
+    .inline-fields {
+      display: flex;
+      gap: 10px;
+    }
+    .inline-fields > div {
+      flex: 1;
+    }
     button {
       background-color: #4CAF50;
       color: white;
       border: none;
-      margin-top: 20px;
       cursor: pointer;
     }
     button:hover {
@@ -52,120 +58,95 @@
     }
     .scan-btn {
       background-color: #2196F3;
-      color: white;
-      margin-top: 15px;
     }
     .scan-btn:hover {
       background-color: #0b7dda;
     }
-    .download-btn {
-      background-color: #2196F3;
-      margin-top: 10px;
-    }
-    .download-btn:hover {
-      background-color: #0b7dda;
-    }
-    .buttons-container {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-    }
-    @media (max-width: 600px) {
-      .buttons-container {
-        flex-direction: column;
-        gap: 20px;
-      }
-    }
     #videoPreview {
-      display: block;
-      margin: 20px auto;
-      max-width: 100%;
-      height: auto;
+      display: none;
+      width: 100%;
+      margin: 10px 0;
     }
   </style>
 </head>
 <body>
 
-<h1>Fuel Report Scanner</h1>
-
 <form id="fuelForm">
-  <label>Date:</label>
-  <input type="date" id="date" required readonly>
+  <h2>Fuel Report</h2>
 
-  <label>Fuel Type:</label>
+  <label>Date</label>
+  <input type="date" id="date" readonly>
+
+  <label>Select Type</label>
   <select id="fuelType" required>
+    <option value="">Select</option>
     <option value="Petrol">Petrol</option>
     <option value="Diesel">Diesel</option>
   </select>
 
-  <label>Start Reading:</label>
-  <input type="number" id="startReading" required readonly>
+  <label>Meter Reading</label>
+  <button type="button" class="scan-btn" onclick="startCamera()">Start Scanner</button>
+  <video id="videoPreview" autoplay playsinline></video>
 
-  <label>End Reading:</label>
-  <input type="number" id="endReading" required readonly>
-
-  <div class="buttons-container">
-    <button type="button" class="scan-btn" onclick="scanReading()">Scan Reading</button>
+  <div class="inline-fields">
+    <div>
+      <label>Opening</label>
+      <input type="number" id="opening" readonly>
+    </div>
+    <div>
+      <label>Closing</label>
+      <input type="number" id="closing" readonly>
+    </div>
   </div>
 
-  <label>Litres Sold (Auto):</label>
-  <input type="number" id="litresSold" readonly>
+  <label>Total Sold (Litres)</label>
+  <input type="number" id="totalSold" readonly>
 
-  <label>Cash (₹):</label>
-  <input type="number" id="cash" required>
+  <label>Current Time</label>
+  <input type="time" id="currentTime" readonly>
 
-  <label>GPay (₹):</label>
-  <input type="number" id="gpay" required>
+  <h3>Manual Entries</h3>
 
-  <label>Debtor (₹):</label>
-  <input type="number" id="debtor" required>
+  <div class="inline-fields">
+    <div><label>Cash</label><input type="number" id="cash"></div>
+    <div><label>Change</label><input type="number" id="change"></div>
+  </div>
+  <div class="inline-fields">
+    <div><label>Net Banking</label><input type="number" id="netBanking"></div>
+    <div><label>Debtor</label><input type="number" id="debtor"></div>
+  </div>
+  <div class="inline-fields">
+    <div><label>Bank</label><input type="number" id="bank"></div>
+    <div><label>Expenses</label><input type="number" id="expenses"></div>
+  </div>
 
-  <button type="submit">Save Entry</button>
+  <button type="submit">Save</button>
 </form>
 
-<video id="videoPreview" autoplay playsinline style="display:none;"></video>
-
-<button class="download-btn" onclick="downloadCSV()">Download Excel File</button>
-
 <script>
+  let scanningFor = 'opening'; // first reading is opening
   let entries = [];
-  let currentReadingType = 'start'; // Start reading by default
 
-  // Set today's date automatically
   window.onload = function() {
-    const today = new Date().toISOString().substr(0, 10);
-    document.getElementById('date').value = today;
+    const today = new Date();
+    document.getElementById('date').value = today.toISOString().substr(0,10);
+    document.getElementById('currentTime').value = today.toTimeString().substr(0,5);
   };
 
-  // Auto-calculate litres sold when endReading changes
-  document.getElementById('endReading').addEventListener('input', function() {
-    const start = parseFloat(document.getElementById('startReading').value) || 0;
-    const end = parseFloat(document.getElementById('endReading').value) || 0;
-    document.getElementById('litresSold').value = (end - start).toFixed(2);
-  });
-
-  function scanReading() {
-    const inputId = currentReadingType === 'start' ? 'startReading' : 'endReading';
-    currentReadingType = currentReadingType === 'start' ? 'end' : 'start';
-
+  function startCamera() {
     const video = document.getElementById('videoPreview');
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" } } })
       .then(function(stream) {
-        video.style.display = 'block';
         video.srcObject = stream;
+        video.style.display = 'block';
 
-        video.addEventListener('loadedmetadata', function() {
+        video.addEventListener('click', function captureFrame() {
+          const canvas = document.createElement('canvas');
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-        });
-
-        const interval = setInterval(function() {
-          if (video.paused || video.ended) return;
-
+          const ctx = canvas.getContext('2d');
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
           Tesseract.recognize(
             canvas,
             'eng',
@@ -173,15 +154,20 @@
           ).then(({ data: { text } }) => {
             const number = parseFloat(text.replace(/[^\d.-]/g, '').trim());
             if (!isNaN(number)) {
-              document.getElementById(inputId).value = number;
-              // Stop everything
-              video.pause();
-              video.srcObject.getTracks().forEach(track => track.stop());
-              clearInterval(interval);
-              video.style.display = 'none';
+              if (scanningFor === 'opening') {
+                document.getElementById('opening').value = number;
+                scanningFor = 'closing';
+                alert("Opening Reading Captured. Now Scan Closing Reading!");
+              } else {
+                document.getElementById('closing').value = number;
+                video.srcObject.getTracks().forEach(track => track.stop());
+                video.style.display = 'none';
+                scanningFor = 'opening';
+                calculateSold();
+              }
             }
           });
-        }, 1000);
+        }, { once: true });
       })
       .catch(function(err) {
         console.log("Error: " + err);
@@ -189,48 +175,38 @@
       });
   }
 
+  function calculateSold() {
+    const opening = parseFloat(document.getElementById('opening').value) || 0;
+    const closing = parseFloat(document.getElementById('closing').value) || 0;
+    document.getElementById('totalSold').value = (closing - opening).toFixed(2);
+  }
+
   document.getElementById('fuelForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    
-    const date = document.getElementById('date').value;
-    const fuelType = document.getElementById('fuelType').value;
-    const start = parseFloat(document.getElementById('startReading').value);
-    const end = parseFloat(document.getElementById('endReading').value);
-    const litresSold = parseFloat(document.getElementById('litresSold').value);
-    const cash = parseFloat(document.getElementById('cash').value);
-    const gpay = parseFloat(document.getElementById('gpay').value);
-    const debtor = parseFloat(document.getElementById('debtor').value);
-    
-    entries.push({ date, fuelType, start, end, litresSold, cash, gpay, debtor });
 
-    alert('Entry saved!');
+    const entry = {
+      date: document.getElementById('date').value,
+      fuelType: document.getElementById('fuelType').value,
+      opening: document.getElementById('opening').value,
+      closing: document.getElementById('closing').value,
+      totalSold: document.getElementById('totalSold').value,
+      currentTime: document.getElementById('currentTime').value,
+      cash: document.getElementById('cash').value,
+      change: document.getElementById('change').value,
+      netBanking: document.getElementById('netBanking').value,
+      debtor: document.getElementById('debtor').value,
+      bank: document.getElementById('bank').value,
+      expenses: document.getElementById('expenses').value
+    };
+    
+    entries.push(entry);
+    console.log(entries);
 
-    // Reset form fields
-    document.getElementById('startReading').value = '';
-    document.getElementById('endReading').value = '';
-    document.getElementById('litresSold').value = '';
-    document.getElementById('cash').value = '';
-    document.getElementById('gpay').value = '';
-    document.getElementById('debtor').value = '';
+    alert('Entry Saved!');
+
+    document.getElementById('fuelForm').reset();
+    window.onload(); // Reset date & time
   });
-
-  function downloadCSV() {
-    let csvContent = "data:text/csv;charset=utf-8,Date,Fuel Type,Start Reading,End Reading,Litres Sold,Cash,GPay,Debtor\n";
-    
-    entries.forEach(function(entry) {
-      const row = `${entry.date},${entry.fuelType},${entry.start},${entry.end},${entry.litresSold},${entry.cash},${entry.gpay},${entry.debtor}`;
-      csvContent += row + "\n";
-    });
-    
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "fuel_report.csv");
-    document.body.appendChild(link);
-
-    link.click();
-    document.body.removeChild(link);
-  }
 </script>
 
 </body>
